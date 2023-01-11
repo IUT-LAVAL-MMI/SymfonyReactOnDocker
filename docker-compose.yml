@@ -1,0 +1,122 @@
+version: '3.4'
+# author: Rémi Venant, <remi.venant@univ-lemans.fr>
+
+name: 'lpdiwa-project-dev'
+
+services:
+  mariadb:
+    image: mariadb:10.10
+    env_file:
+      - docker/env/dev/mariadb.env
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./docker/dbInit/mariadb:/docker-entrypoint-initdb.d
+    networks:
+      lpdiwa-net:
+        aliases:
+          - mariadb
+    ports:
+      - 127.0.0.1:3306:3306
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin -uroot -p$${MARIADB_ROOT_PASSWORD} -h localhost ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  mongo:
+    image: mongo:6.0
+    env_file:
+      - docker/env/dev/mongo.env
+    volumes:
+      - mongo-data:/data/db
+      - ./docker/dbInit/mongo:/docker-entrypoint-initdb.d
+    networks:
+      lpdiwa-net:
+        aliases:
+          - mongo
+    ports:
+      - 127.0.0.1:27017:27017
+    restart: always
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "'db.runCommand(\"ping\").ok'", "--quiet"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  symfony:
+    build:
+      context: ./docker/images/symfony
+      args:
+        - http_proxy=${HTTP_PROXY:-}
+        - https_proxy=${HTTPS_PROXY:-}
+        - no_proxy=${NO_PROXY:-}
+    env_file:
+      - docker/env/dev/symfony.env
+    environment:
+      - http_proxy=${HTTP_PROXY:-}
+      - https_proxy=${HTTPS_PROXY:-}
+      - no_proxy=${NO_PROXY:-}
+    volumes:
+      - api-vendor:/var/www/app/vendor
+      - ./docker/conf/dev/symfony_php.ini:/usr/local/etc/php/php.ini:ro
+      - ./api:/var/www/app
+    working_dir: /var/www/app
+    networks:
+      lpdiwa-net:
+        aliases:
+          - symfony
+    restart: always
+    command: bash -c "composer install && php-fpm"
+    healthcheck:
+      test: ["CMD", "pidof", "php-fpm"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  http:
+    image: nginx:1.23-alpine
+    depends_on:
+      - symfony
+    volumes:
+      - ./api:/var/www/app:ro
+      - ./docker/conf/dev/nginx_default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      lpdiwa-net:
+        aliases:
+          - httpsrv
+    ports:
+      - 127.0.0.1:8080:80
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -so /dev/null http://localhost:80/"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  npm:
+   image: node:18
+   env_file:
+     - docker/env/dev/npm.env
+   environment:
+     - http_proxy=${HTTP_PROXY:-}
+     - https_proxy=${HTTPS_PROXY:-}
+     - no_proxy=${NO_PROXY:-}
+   volumes:
+     - ./app:/var/www/app
+   working_dir: /var/www/app
+   ports:
+     - 127.0.0.1:3000:3000
+   command: bash -c "npm ci && npm run start"
+
+volumes:
+  mariadb-data:
+  mongo-data:
+  api-vendor:
+
+networks:
+  lpdiwa-net:
