@@ -70,6 +70,7 @@ services:
           - symfony
     restart: always
     command: bash -c "composer install && php-fpm"
+    #command: bash -c "php-fpm"
     healthcheck:
       test: ["CMD", "pidof", "php-fpm"]
       interval: 10s
@@ -112,6 +113,7 @@ services:
    ports:
      - 127.0.0.1:3000:3000
    command: bash -c "npm ci && npm run start"
+   #command: bash -c "npm run start"
 
 volumes:
   mariadb-data:
